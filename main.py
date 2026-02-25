@@ -1,40 +1,49 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import numpy as np
 import tensorflow as tf
 import io
-from fastapi.middleware.cors import CORSMiddleware
+import os
 
-app = FastAPI()
+# ==============================
+# INITIALISATION
+# ==============================
+
+app = FastAPI(title="Sunu Agro AI API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Autorise toutes les sources (ton téléphone)
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ==============================
-# INITIALISATION DE L'APPLICATION
-# ==============================
-
-app = FastAPI(title="Sunu Agro AI API")
-
-# ==============================
-# CHARGEMENT DU MODÈLE
+# CONFIG
 # ==============================
 
 MODEL_PATH = "modele_feuille.h5"
-
-try:
-    model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ Modèle chargé avec succès")
-except Exception as e:
-    print("❌ Erreur chargement modèle :", e)
-    raise e
+model = None  # lazy loading
 
 # ==============================
-# CLASSES (à adapter selon ton entraînement)
+# CHARGEMENT LAZY DU MODÈLE
+# ==============================
+
+def get_model():
+    global model
+    if model is None:
+        try:
+            print("🔄 Chargement du modèle...")
+            model = tf.keras.models.load_model(MODEL_PATH)
+            print("✅ Modèle chargé")
+        except Exception as e:
+            print("❌ Erreur chargement modèle :", e)
+            raise e
+    return model
+
+# ==============================
+# CLASSES
 # ==============================
 
 class_names = [
@@ -44,7 +53,7 @@ class_names = [
 ]
 
 # ==============================
-# INFORMATIONS SUR LES MALADIES
+# INFOS MALADIES
 # ==============================
 
 disease_info = {
@@ -69,8 +78,7 @@ disease_info = {
 @app.get("/")
 def home():
     return {"message": "API IA Sunu Agro opérationnelle 🌱"}
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+
 # ==============================
 # ROUTE PRÉDICTION
 # ==============================
@@ -82,22 +90,24 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Aucun fichier envoyé")
 
     try:
-        # Lecture de l'image
+        # lazy load modèle
+        model_local = get_model()
+
+        # lecture image
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Prétraitement (IMPORTANT : même taille que l'entraînement)
+        # preprocessing
         image = image.resize((128, 128))
         image_array = np.array(image) / 255.0
         image_array = np.expand_dims(image_array, axis=0)
 
-        # Prédiction
-        predictions = model.predict(image_array)
+        # prédiction
+        predictions = model_local.predict(image_array)
         confidence = float(np.max(predictions))
         label_index = int(np.argmax(predictions))
         label = class_names[label_index]
 
-        # Récupération informations maladie
         description = disease_info[label]["description"]
         recommendation = disease_info[label]["recommendation"]
 
