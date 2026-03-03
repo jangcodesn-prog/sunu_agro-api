@@ -35,7 +35,7 @@ def get_model():
     if model is None:
         try:
             print("🔄 Chargement du modèle...")
-            model = tf.keras.models.load_model(MODEL_PATH)
+            model = tf.keras.models.load_model(MODEL_PATH, compile=False)
             print("✅ Modèle chargé")
         except Exception as e:
             print("❌ Erreur chargement modèle :", e)
